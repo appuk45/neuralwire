@@ -1,0 +1,31 @@
+name: Daily AI Digest
+
+on:
+  schedule:
+    - cron: '30 1 * * *'   # 01:30 UTC = 07:00 IST
+  workflow_dispatch: {}
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+        working-directory: scripts/cron
+      - run: npm start
+        working-directory: scripts/cron
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          WEB_APP_URL: ${{ secrets.WEB_APP_URL }}
+          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+          DATADOG_API_KEY: ${{ secrets.DATADOG_API_KEY }}
