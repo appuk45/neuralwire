@@ -1,0 +1,6 @@
+{
+  "name": "neuralwire",
+  "private": true,
+  "workspaces": ["scripts/cron", "apps/web"],
+  "engines": { "node": ">=20" }
+}
