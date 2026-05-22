@@ -1,0 +1,38 @@
+import { describe, it, expect } from 'vitest';
+import { summarizeBatch, fallbackSummary } from '../../src/pipeline/summarize.js';
+import type { Article } from '../../src/types.js';
+
+const make = (title: string): Article => ({
+  source: 'arxiv', sourceUrl: 'https://x', title, rawText: 'body', contentHash: title,
+});
+
+describe('summarizeBatch', () => {
+  it('merges Gemini JSON output back onto articles by index', async () => {
+    const articles = [make('A'), make('B')];
+    const fakeModel = async (_prompt: string) => JSON.stringify([
+      { headline: 'HA', summary: 'SA', categories: ['ML'], relevanceScore: 0.9 },
+      { headline: 'HB', summary: 'SB', categories: ['CV'], relevanceScore: 0.4 },
+    ]);
+    const out = await summarizeBatch(articles, fakeModel);
+    expect(out[0].headline).toBe('HA');
+    expect(out[0].relevanceScore).toBe(0.9);
+    expect(out[1].categories).toEqual(['CV']);
+  });
+
+  it('uses fallback when the model output is unparseable', async () => {
+    const articles = [make('Some Title')];
+    const fakeModel = async () => 'not json at all';
+    const out = await summarizeBatch(articles, fakeModel);
+    expect(out[0].headline).toBe('Some Title');
+    expect(out[0].relevanceScore).toBe(0.3);
+  });
+});
+
+describe('fallbackSummary', () => {
+  it('builds a SummarizedArticle from the raw article', () => {
+    const a = make('Title');
+    const s = fallbackSummary(a);
+    expect(s.headline).toBe('Title');
+    expect(s.categories).toEqual([]);
+  });
+});
