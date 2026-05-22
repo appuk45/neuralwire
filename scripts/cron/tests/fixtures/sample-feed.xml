@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Sample Feed</title>
+    <item>
+      <title>Recent Model Release</title>
+      <link>https://example.com/recent</link>
+      <description>A brand new model dropped.</description>
+      <pubDate>__RECENT__</pubDate>
+    </item>
+    <item>
+      <title>Old News</title>
+      <link>https://example.com/old</link>
+      <description>This is from last week.</description>
+      <pubDate>__OLD__</pubDate>
+    </item>
+  </channel>
+</rss>
