@@ -3,13 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
+    "@google/genai": "^1.0.0",
     "@supabase/supabase-js": "^2.45.0",
     "resend": "^4.0.0",
     "rss-parser": "^3.13.0",
