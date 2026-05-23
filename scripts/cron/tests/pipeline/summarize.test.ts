@@ -36,3 +36,26 @@ describe('fallbackSummary', () => {
     expect(s.categories).toEqual([]);
   });
 });
+
+describe('summarizeBatch category filtering', () => {
+  it('drops invalid categories but keeps valid ones', async () => {
+    const articles = [make('A')];
+    const fakeModel = async () => JSON.stringify([
+      { headline: 'H', summary: 'S', categories: ['ML', 'Misc', 'CV', 'NotARealCat'], relevanceScore: 0.8 },
+    ]);
+    const out = await summarizeBatch(articles, fakeModel);
+    expect(out[0].categories).toEqual(['ML', 'CV']);
+    expect(out[0].headline).toBe('H');
+  });
+
+  it('keeps article with empty categories if all were invalid', async () => {
+    const articles = [make('A')];
+    const fakeModel = async () => JSON.stringify([
+      { headline: 'H', summary: 'S', categories: ['Misc', 'Fake'], relevanceScore: 0.8 },
+    ]);
+    const out = await summarizeBatch(articles, fakeModel);
+    expect(out[0].categories).toEqual([]);
+    expect(out[0].headline).toBe('H');
+    expect(out[0].relevanceScore).toBe(0.8);
+  });
+});

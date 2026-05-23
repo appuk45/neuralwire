@@ -1,6 +1,8 @@
 import { z } from 'zod';
-import type { Article, SummarizedArticle } from '../types.js';
+import { CATEGORIES, type Article, type SummarizedArticle } from '../types.js';
 import type { Logger } from '../log.js';
+
+const VALID_CATEGORIES = new Set<string>(CATEGORIES);
 
 // Callable that takes a prompt and returns the model's text output.
 export type ModelFn = (prompt: string) => Promise<string>;
@@ -98,7 +100,12 @@ export async function summarizeBatch(
     batch.forEach((a, idx) => {
       const candidate = itemSchema.safeParse(arr[idx]);
       if (candidate.success) {
-        out.push({ ...a, ...candidate.data });
+        const filteredCats = candidate.data.categories.filter((c) => VALID_CATEGORIES.has(c));
+        if (filteredCats.length !== candidate.data.categories.length) {
+          const dropped = candidate.data.categories.filter((c) => !VALID_CATEGORIES.has(c));
+          log?.warn('summarize dropped invalid categories', { batchIndex, itemIndex: idx, dropped });
+        }
+        out.push({ ...a, ...candidate.data, categories: filteredCats });
         okCount++;
       } else {
         if (arr[idx] !== undefined) {
