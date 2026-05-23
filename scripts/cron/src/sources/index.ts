@@ -34,7 +34,7 @@ export async function fetchAll(
   const entries = Object.entries(sources);
   const results = await Promise.allSettled(
     entries.map(async ([name, fn]) => {
-      const items = await fn();
+      const items = await fn(log);
       return { name, items };
     }),
   );

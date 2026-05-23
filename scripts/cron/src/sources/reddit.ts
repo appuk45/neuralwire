@@ -9,10 +9,11 @@ interface RedditChild {
   data: { title: string; url: string; permalink: string; created_utc: number; selftext?: string };
 }
 
-export const redditSource: SourceFetcher = async () => {
+export const redditSource: SourceFetcher = async (log) => {
   const cutoff = Date.now() - WINDOW_MS;
   const out: RawArticle[] = [];
   for (const sub of SUBREDDITS) {
+    const tSub = Date.now();
     try {
       const res = await fetchWithTimeout(
         `https://www.reddit.com/r/${sub}/new.json?limit=50`,
@@ -25,10 +26,13 @@ export const redditSource: SourceFetcher = async () => {
       );
       const contentType = res.headers.get('content-type') ?? '';
       if (!res.ok || !contentType.includes('application/json')) {
-        console.error(JSON.stringify({ level: 'warn', msg: 'reddit sub blocked or non-json', sub, status: res.status, contentType }));
+        log?.warn('reddit sub blocked or non-json', {
+          sub, status: res.status, contentType, durationMs: Date.now() - tSub,
+        });
         continue;
       }
       const json = (await res.json()) as { data: { children: RedditChild[] } };
+      let kept = 0;
       for (const child of json.data.children) {
         const d = child.data;
         const ts = d.created_utc * 1000;
@@ -40,9 +44,15 @@ export const redditSource: SourceFetcher = async () => {
           rawText: d.selftext ?? '',
           publishedAt: new Date(ts).toISOString(),
         });
+        kept++;
       }
+      log?.info('reddit sub fetched', {
+        sub, kept, totalPosts: json.data.children.length, durationMs: Date.now() - tSub,
+      });
     } catch (e) {
-      console.error(JSON.stringify({ level: 'warn', msg: 'reddit sub failed', sub, error: e instanceof Error ? e.message : String(e) }));
+      log?.warn('reddit sub failed', {
+        sub, error: e instanceof Error ? e.message : String(e), durationMs: Date.now() - tSub,
+      });
     }
   }
   return out;
