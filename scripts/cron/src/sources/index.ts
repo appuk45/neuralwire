@@ -24,27 +24,33 @@ export interface FetchAllResult {
   stats: Record<string, number>;
 }
 
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
+}
+
 export async function fetchAll(
   sources: Record<string, SourceFetcher>,
   log: Logger,
 ): Promise<FetchAllResult> {
   const stats: Record<string, number> = {};
+  const entries = Object.entries(sources);
   const results = await Promise.allSettled(
-    Object.entries(sources).map(async ([name, fn]) => {
+    entries.map(async ([name, fn]) => {
       const items = await fn();
       return { name, items };
     }),
   );
   const articles: RawArticle[] = [];
-  for (const [name] of Object.entries(sources)) stats[name] = 0;
-  for (const r of results) {
+  for (const [name] of entries) stats[name] = 0;
+  results.forEach((r, idx) => {
+    const name = entries[idx][0];
     if (r.status === 'fulfilled') {
       stats[r.value.name] = r.value.items.length;
       articles.push(...r.value.items);
       log.info('source fetched', { source: r.value.name, count: r.value.items.length });
     } else {
-      log.error('source failed', { error: String(r.reason) });
+      log.error('source failed', { source: name, error: errMsg(r.reason) });
     }
-  }
+  });
   return { articles, stats };
 }

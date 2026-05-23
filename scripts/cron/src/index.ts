@@ -114,10 +114,24 @@ async function main(): Promise<void> {
   if (run.status === 'failed') process.exit(1);
 }
 
+function serializeError(e: unknown): unknown {
+  if (e instanceof Error) {
+    return { name: e.name, message: e.message, stack: e.stack };
+  }
+  if (typeof e === 'object' && e !== null) {
+    try {
+      return JSON.parse(JSON.stringify(e));
+    } catch {
+      return String(e);
+    }
+  }
+  return String(e);
+}
+
 // Run main only when executed directly (not when imported by tests).
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((e) => {
-    console.error(JSON.stringify({ level: 'error', msg: 'fatal', error: String(e) }));
+    console.error(JSON.stringify({ level: 'error', msg: 'fatal', error: serializeError(e) }));
     process.exit(1);
   });
 }
