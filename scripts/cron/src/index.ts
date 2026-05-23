@@ -29,54 +29,78 @@ export interface PipelineDeps {
   };
 }
 
+function errStr(e: unknown): string {
+  return e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
+}
+
 export async function runPipeline(deps: PipelineDeps, log: Logger): Promise<DigestRun> {
-  const { articles: raw, stats } = await fetchAll(deps.sources, log);
-  const normalized = raw.map(normalize);
-  const filtered = keywordFilter(normalized);
-  const deduped = dedupeInBatch(filtered);
-  const known = await deps.getKnownHashes();
-  const fresh = removeKnown(deduped, known);
-  log.info('pipeline counts', {
-    fetched: raw.length, filtered: filtered.length, fresh: fresh.length,
-  });
-
-  const summarized = await summarizeBatch(fresh, deps.model);
-  const top = rankTop(summarized, deps.meta.digestCount);
-  const topHashes = new Set(top.map((a) => a.contentHash));
-
-  const rows = summarized.map((a) =>
-    toRow(a, { inDigest: topHashes.has(a.contentHash), digestDate: deps.meta.date }));
-  const stored = await deps.insertArticles(rows);
-
+  let stats: Record<string, number> = {};
+  let articlesFetched = 0;
+  let articlesStored = 0;
   let emailSent = false;
   let status = 'success';
   let errorMsg: string | null = null;
+
   try {
-    if (top.length > 0) {
-      const html = renderDigestHtml(top, {
-        date: deps.meta.date, webAppUrl: deps.meta.webAppUrl, accessToken: deps.meta.accessToken,
-      });
-      const subject = `🤖 AI Digest · ${deps.meta.date} · ${top.length} stories`;
-      await deps.sendDigest(html, subject, deps.meta.recipientEmail);
-      emailSent = true;
+    const { articles: raw, stats: s } = await fetchAll(deps.sources, log);
+    stats = s;
+    articlesFetched = raw.length;
+    const normalized = raw.map(normalize);
+    const filtered = keywordFilter(normalized);
+    const deduped = dedupeInBatch(filtered);
+    const known = await deps.getKnownHashes();
+    const fresh = removeKnown(deduped, known);
+    log.info('pipeline counts', {
+      fetched: raw.length, filtered: filtered.length, fresh: fresh.length,
+    });
+
+    const summarized = await summarizeBatch(fresh, deps.model);
+    const top = rankTop(summarized, deps.meta.digestCount);
+    const topHashes = new Set(top.map((a) => a.contentHash));
+
+    const rows = summarized.map((a) =>
+      toRow(a, { inDigest: topHashes.has(a.contentHash), digestDate: deps.meta.date }));
+    articlesStored = await deps.insertArticles(rows);
+
+    try {
+      if (top.length > 0) {
+        const html = renderDigestHtml(top, {
+          date: deps.meta.date, webAppUrl: deps.meta.webAppUrl, accessToken: deps.meta.accessToken,
+        });
+        const subject = `🤖 AI Digest · ${deps.meta.date} · ${top.length} stories`;
+        await deps.sendDigest(html, subject, deps.meta.recipientEmail);
+        emailSent = true;
+      }
+    } catch (e) {
+      status = 'partial';
+      errorMsg = errStr(e);
+      log.error('email send failed', { error: errorMsg });
     }
   } catch (e) {
-    status = 'partial';
-    errorMsg = String(e);
-    log.error('email send failed', { error: errorMsg });
+    status = 'failed';
+    errorMsg = errStr(e);
+    log.error('pipeline failed', { error: errorMsg });
   }
 
   const run: DigestRun = {
     run_date: deps.meta.date,
-    articles_fetched: raw.length,
-    articles_stored: stored,
+    articles_fetched: articlesFetched,
+    articles_stored: articlesStored,
     email_sent: emailSent,
     status,
     error: errorMsg,
     per_source_stats: stats,
   };
-  await deps.recordRun(run);
-  await deps.shipLogs(log.lines());
+  try {
+    await deps.recordRun(run);
+  } catch (e) {
+    log.error('recordRun failed', { error: errStr(e) });
+  }
+  try {
+    await deps.shipLogs(log.lines());
+  } catch (e) {
+    console.error(JSON.stringify({ level: 'error', msg: 'shipLogs failed', error: errStr(e) }));
+  }
   return run;
 }
 
