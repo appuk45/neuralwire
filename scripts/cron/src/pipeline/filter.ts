@@ -1,7 +1,7 @@
 import type { Article } from '../types.js';
 
 // Sources that are AI-only by definition; never keyword-filter them.
-const ALWAYS_KEEP_SOURCES = new Set(['arxiv', 'huggingface', 'paperswithcode']);
+const ALWAYS_KEEP_SOURCES = new Set(['arxiv', 'huggingface']);
 
 const KEYWORDS = [
   'ai', 'artificial intelligence', 'machine learning', 'deep learning',

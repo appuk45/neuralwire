@@ -4,7 +4,6 @@ import type { SourceFetcher } from './rss.js';
 import { arxivSource } from './arxiv.js';
 import { blogsSource } from './blogs.js';
 import { technewsSource } from './technews.js';
-import { papersWithCodeSource } from './paperswithcode.js';
 import { redditSource } from './reddit.js';
 import { huggingfaceSource } from './huggingface.js';
 import { githubSource } from './github.js';
@@ -13,7 +12,6 @@ export const SOURCES: Record<string, SourceFetcher> = {
   arxiv: arxivSource,
   blogs: blogsSource,
   technews: technewsSource,
-  paperswithcode: papersWithCodeSource,
   reddit: redditSource,
   huggingface: huggingfaceSource,
   github: githubSource,
