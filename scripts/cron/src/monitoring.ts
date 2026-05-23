@@ -8,7 +8,7 @@ export async function shipLogs(lines: LogLine[], apiKey: string): Promise<void> 
     message: JSON.stringify(l),
     status: l.level,
   }));
-  await fetch('https://http-intake.logs.datadoghq.com/api/v2/logs', {
+  await fetch('https://http-intake.logs.us5.datadoghq.com/api/v2/logs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'DD-API-KEY': apiKey },
     body: JSON.stringify(payload),
