@@ -9,7 +9,7 @@ import { summarizeBatch, type ModelFn } from './pipeline/summarize.js';
 import { rankTop } from './pipeline/rank.js';
 import { renderDigestHtml, sendDigest } from './email/digest.js';
 import {
-  makeDb, getKnownHashes, insertArticles, recordRun, toRow, type DigestRun,
+  makeDb, getKnownHashes, insertArticles, recordRun, toRow, cleanupStaleArticles, type DigestRun,
 } from './db.js';
 import { shipLogs } from './monitoring.js';
 import { GoogleGenAI } from '@google/genai';
@@ -19,6 +19,7 @@ import { withRetry } from './util/retry.js';
 export interface PipelineDeps {
   sources: Record<string, SourceFetcher>;
   model: ModelFn;
+  cleanupStale: () => Promise<number>;
   getKnownHashes: () => Promise<Set<string>>;
   insertArticles: (rows: ReturnType<typeof toRow>[]) => Promise<number>;
   sendDigest: (html: string, subject: string, to: string) => Promise<string | null>;
@@ -27,6 +28,7 @@ export interface PipelineDeps {
   meta: {
     date: string; webAppUrl: string; accessToken: string;
     recipientEmail: string; digestCount: number;
+    staleDays: number;
   };
 }
 
@@ -51,6 +53,16 @@ export async function runPipeline(deps: PipelineDeps, log: Logger): Promise<Dige
   let errorMsg: string | null = null;
 
   try {
+    try {
+      const tCleanup = Date.now();
+      const deleted = await deps.cleanupStale();
+      log.info('cleanup done', {
+        deleted, olderThanDays: deps.meta.staleDays, durationMs: Date.now() - tCleanup,
+      });
+    } catch (e) {
+      log.warn('cleanup failed (non-fatal)', { error: errStr(e) });
+    }
+
     const tFetch = Date.now();
     const { articles: raw, stats: s } = await fetchAll(deps.sources, log);
     stats = s;
@@ -210,10 +222,12 @@ async function main(): Promise<void> {
   };
   const date = new Date().toISOString().slice(0, 10);
 
+  const staleDays = 30;
   const run = await runPipeline(
     {
       sources: SOURCES,
       model,
+      cleanupStale: () => cleanupStaleArticles(db, staleDays),
       getKnownHashes: () => getKnownHashes(db),
       insertArticles: (rows) => insertArticles(db, rows),
       sendDigest: (html, subject, to) => sendDigest(html, subject, to, cfg.resendApiKey),
@@ -221,7 +235,7 @@ async function main(): Promise<void> {
       shipLogs: (lines) => shipLogs(lines, cfg.datadogApiKey),
       meta: {
         date, webAppUrl: cfg.webAppUrl, accessToken: cfg.accessToken,
-        recipientEmail: cfg.recipientEmail, digestCount: 10,
+        recipientEmail: cfg.recipientEmail, digestCount: 10, staleDays,
       },
     },
     log,

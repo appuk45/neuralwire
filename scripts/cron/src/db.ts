@@ -67,3 +67,17 @@ export async function recordRun(db: SupabaseClient, run: DigestRun): Promise<voi
   const { error } = await db.from('digest_runs').insert(run);
   if (error) throw error;
 }
+
+export async function cleanupStaleArticles(
+  db: SupabaseClient,
+  olderThanDays: number,
+): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanDays * 24 * 3600 * 1000).toISOString();
+  const { count, error } = await db
+    .from('articles')
+    .delete({ count: 'exact' })
+    .eq('in_digest', false)
+    .lt('fetched_at', cutoff);
+  if (error) throw error;
+  return count ?? 0;
+}

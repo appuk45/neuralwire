@@ -13,17 +13,19 @@ describe('runPipeline', () => {
       { source: 'technews', sourceUrl: 'https://b', title: 'Bakery opens', rawText: 'bread' },
     ];
 
+    const cleanupStale = vi.fn(async () => 3);
     const deps = {
       sources: { arxiv: async () => [raw[0]], technews: async () => [raw[1]] },
       model: async (_p: string) => JSON.stringify([
         { headline: 'H', summary: 'S', categories: ['ML'], relevanceScore: 0.9 },
       ]),
+      cleanupStale,
       getKnownHashes: async () => new Set<string>(),
       insertArticles: vi.fn(async (rows: unknown[]) => rows.length),
       sendDigest: vi.fn(async (): Promise<string | null> => 'msg_test_123'),
       recordRun: vi.fn(async () => {}),
       shipLogs: vi.fn(async () => {}),
-      meta: { date: '2026-05-22', webAppUrl: 'https://x', accessToken: 't', recipientEmail: 'me@x', digestCount: 10 },
+      meta: { date: '2026-05-22', webAppUrl: 'https://x', accessToken: 't', recipientEmail: 'me@x', digestCount: 10, staleDays: 30 },
     };
 
     const run = await runPipeline(deps, log);
@@ -32,6 +34,7 @@ describe('runPipeline', () => {
     expect(run.status).toBe('success');
     expect(run.articles_stored).toBe(1);
     expect(run.email_sent).toBe(true);
+    expect(cleanupStale).toHaveBeenCalledOnce();
     expect(deps.insertArticles).toHaveBeenCalledOnce();
     expect(deps.sendDigest).toHaveBeenCalledOnce();
     expect(deps.recordRun).toHaveBeenCalledOnce();
@@ -43,12 +46,13 @@ describe('runPipeline', () => {
     const deps = {
       sources: { arxiv: async () => [{ source: 'arxiv', sourceUrl: 'https://a', title: 'LLM paper', rawText: 'x' }] },
       model: async () => JSON.stringify([{ headline: 'H', summary: 'S', categories: ['ML'], relevanceScore: 0.9 }]),
+      cleanupStale: async () => 0,
       getKnownHashes: async () => new Set<string>(),
       insertArticles: async () => 1,
-      sendDigest: async () => { throw new Error('mail down'); },
+      sendDigest: async (): Promise<string | null> => { throw new Error('mail down'); },
       recordRun: vi.fn(async () => {}),
       shipLogs: async () => {},
-      meta: { date: '2026-05-22', webAppUrl: 'https://x', accessToken: 't', recipientEmail: 'me@x', digestCount: 10 },
+      meta: { date: '2026-05-22', webAppUrl: 'https://x', accessToken: 't', recipientEmail: 'me@x', digestCount: 10, staleDays: 30 },
     };
     const run = await runPipeline(deps, log);
     expect(run.status).toBe('partial');
