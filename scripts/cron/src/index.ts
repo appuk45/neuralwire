@@ -14,6 +14,7 @@ import {
 import { shipLogs } from './monitoring.js';
 import { GoogleGenAI } from '@google/genai';
 import type { LogLine } from './log.js';
+import { withRetry } from './util/retry.js';
 
 export interface PipelineDeps {
   sources: Record<string, SourceFetcher>;
@@ -183,10 +184,22 @@ async function main(): Promise<void> {
   const geminiModel = 'gemini-3.5-flash';
   const model: ModelFn = async (prompt) => {
     const tModel = Date.now();
-    const result = await genai.models.generateContent({
-      model: geminiModel,
-      contents: prompt,
-    });
+    const result = await withRetry(
+      () => genai.models.generateContent({ model: geminiModel, contents: prompt }),
+      {
+        maxAttempts: 3,
+        baseDelayMs: 2000,
+        onRetry: (attempt, e, delayMs) => {
+          const obj = e as { status?: number; message?: string } | null;
+          log.warn('gemini retry', {
+            attempt,
+            delayMs,
+            status: obj?.status ?? null,
+            error: obj?.message ?? String(e),
+          });
+        },
+      },
+    );
     log.info('gemini api call', {
       model: geminiModel,
       promptLen: prompt.length,
