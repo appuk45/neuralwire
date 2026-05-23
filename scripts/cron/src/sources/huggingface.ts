@@ -1,5 +1,6 @@
 import type { RawArticle } from '../types.js';
 import type { SourceFetcher } from './rss.js';
+import { fetchWithTimeout } from '../util/fetchWithTimeout.js';
 
 const WINDOW_MS = 24 * 3600 * 1000;
 
@@ -9,7 +10,7 @@ interface HfEntry {
 
 export const huggingfaceSource: SourceFetcher = async () => {
   const cutoff = Date.now() - WINDOW_MS;
-  const res = await fetch('https://huggingface.co/api/daily_papers');
+  const res = await fetchWithTimeout('https://huggingface.co/api/daily_papers');
   const json = (await res.json()) as HfEntry[];
   const out: RawArticle[] = [];
   for (const e of json) {

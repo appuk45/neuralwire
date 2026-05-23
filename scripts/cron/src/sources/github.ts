@@ -1,5 +1,6 @@
 import type { RawArticle } from '../types.js';
 import type { SourceFetcher } from './rss.js';
+import { fetchWithTimeout } from '../util/fetchWithTimeout.js';
 
 interface Repo {
   full_name: string;
@@ -15,7 +16,7 @@ export const githubSource: SourceFetcher = async () => {
     `topic:machine-learning topic:llm topic:deep-learning pushed:>=${since}`,
   );
   const url = `https://api.github.com/search/repositories?q=${q}&sort=stars&order=desc&per_page=20`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'neuralwire/1.0' },
   });
   const json = (await res.json()) as { items: Repo[] };

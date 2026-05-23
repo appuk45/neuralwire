@@ -1,5 +1,6 @@
 import type { RawArticle } from '../types.js';
 import type { SourceFetcher } from './rss.js';
+import { fetchWithTimeout } from '../util/fetchWithTimeout.js';
 
 const SUBREDDITS = ['MachineLearning', 'LocalLLaMA', 'artificial'];
 const WINDOW_MS = 24 * 3600 * 1000;
@@ -13,12 +14,15 @@ export const redditSource: SourceFetcher = async () => {
   const out: RawArticle[] = [];
   for (const sub of SUBREDDITS) {
     try {
-      const res = await fetch(`https://www.reddit.com/r/${sub}/new.json?limit=50`, {
-        headers: {
-          'User-Agent': 'web:neuralwire:v1.0 (by /u/appuk45)',
-          'Accept': 'application/json',
+      const res = await fetchWithTimeout(
+        `https://www.reddit.com/r/${sub}/new.json?limit=50`,
+        {
+          headers: {
+            'User-Agent': 'web:neuralwire:v1.0 (by /u/appuk45)',
+            'Accept': 'application/json',
+          },
         },
-      });
+      );
       const contentType = res.headers.get('content-type') ?? '';
       if (!res.ok || !contentType.includes('application/json')) {
         console.error(JSON.stringify({ level: 'warn', msg: 'reddit sub blocked or non-json', sub, status: res.status, contentType }));

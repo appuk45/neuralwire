@@ -1,5 +1,6 @@
 import Parser from 'rss-parser';
 import type { RawArticle } from '../types.js';
+import { fetchWithTimeout } from '../util/fetchWithTimeout.js';
 
 export type SourceFetcher = () => Promise<RawArticle[]>;
 
@@ -12,7 +13,7 @@ export function makeRssSource(source: string, feedUrls: string[]): SourceFetcher
     const all: RawArticle[] = [];
     for (const url of feedUrls) {
       try {
-        const res = await fetch(url);
+        const res = await fetchWithTimeout(url);
         if (!res.ok) {
           console.error(JSON.stringify({ level: 'warn', msg: 'rss feed http error', source, url, status: res.status }));
           continue;
