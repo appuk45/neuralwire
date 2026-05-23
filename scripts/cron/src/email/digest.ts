@@ -33,5 +33,5 @@ export async function sendDigest(
   html: string, subject: string, to: string, apiKey: string,
 ): Promise<void> {
   const resend = new Resend(apiKey);
-  await resend.emails.send({ from: 'AI Digest <digest@resend.dev>', to, subject, html });
+  await resend.emails.send({ from: 'NeuralWire <digest@neuralwire.app>', to, subject, html });
 }
