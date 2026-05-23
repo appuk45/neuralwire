@@ -20,7 +20,7 @@ export interface PipelineDeps {
   model: ModelFn;
   getKnownHashes: () => Promise<Set<string>>;
   insertArticles: (rows: ReturnType<typeof toRow>[]) => Promise<number>;
-  sendDigest: (html: string, subject: string, to: string) => Promise<void>;
+  sendDigest: (html: string, subject: string, to: string) => Promise<string | null>;
   recordRun: (run: DigestRun) => Promise<void>;
   shipLogs: (lines: LogLine[]) => Promise<void>;
   meta: {
@@ -34,42 +34,84 @@ function errStr(e: unknown): string {
 }
 
 export async function runPipeline(deps: PipelineDeps, log: Logger): Promise<DigestRun> {
+  const tPipelineStart = Date.now();
+  log.info('pipeline start', {
+    date: deps.meta.date,
+    digestCount: deps.meta.digestCount,
+    sourceCount: Object.keys(deps.sources).length,
+  });
+
   let stats: Record<string, number> = {};
   let articlesFetched = 0;
   let articlesStored = 0;
   let emailSent = false;
+  let messageId: string | null = null;
   let status = 'success';
   let errorMsg: string | null = null;
 
   try {
+    const tFetch = Date.now();
     const { articles: raw, stats: s } = await fetchAll(deps.sources, log);
     stats = s;
     articlesFetched = raw.length;
+    log.info('fetchAll done', { total: raw.length, durationMs: Date.now() - tFetch });
+
+    const tStage = Date.now();
     const normalized = raw.map(normalize);
     const filtered = keywordFilter(normalized);
     const deduped = dedupeInBatch(filtered);
+    log.info('normalize+filter+dedup done', {
+      normalized: normalized.length,
+      filtered: filtered.length,
+      deduped: deduped.length,
+      durationMs: Date.now() - tStage,
+    });
+
+    const tKnown = Date.now();
     const known = await deps.getKnownHashes();
+    log.info('getKnownHashes done', { knownCount: known.size, durationMs: Date.now() - tKnown });
+
     const fresh = removeKnown(deduped, known);
     log.info('pipeline counts', {
       fetched: raw.length, filtered: filtered.length, fresh: fresh.length,
     });
 
-    const summarized = await summarizeBatch(fresh, deps.model);
+    const tSum = Date.now();
+    const summarized = await summarizeBatch(fresh, deps.model, log);
+    log.info('summarize done', { count: summarized.length, durationMs: Date.now() - tSum });
+
     const top = rankTop(summarized, deps.meta.digestCount);
     const topHashes = new Set(top.map((a) => a.contentHash));
+    log.info('rank done', { topCount: top.length, topScores: top.map((a) => a.relevanceScore) });
 
     const rows = summarized.map((a) =>
       toRow(a, { inDigest: topHashes.has(a.contentHash), digestDate: deps.meta.date }));
+    const tInsert = Date.now();
     articlesStored = await deps.insertArticles(rows);
+    log.info('insert articles done', {
+      rowCount: rows.length,
+      stored: articlesStored,
+      durationMs: Date.now() - tInsert,
+    });
 
     try {
       if (top.length > 0) {
+        const tEmail = Date.now();
         const html = renderDigestHtml(top, {
           date: deps.meta.date, webAppUrl: deps.meta.webAppUrl, accessToken: deps.meta.accessToken,
         });
+        log.info('email rendered', { topCount: top.length, htmlLen: html.length });
         const subject = `🤖 AI Digest · ${deps.meta.date} · ${top.length} stories`;
-        await deps.sendDigest(html, subject, deps.meta.recipientEmail);
+        messageId = await deps.sendDigest(html, subject, deps.meta.recipientEmail);
         emailSent = true;
+        log.info('email sent', {
+          messageId,
+          to: deps.meta.recipientEmail,
+          subject,
+          durationMs: Date.now() - tEmail,
+        });
+      } else {
+        log.warn('no articles to send', { topCount: 0 });
       }
     } catch (e) {
       status = 'partial';
@@ -92,12 +134,28 @@ export async function runPipeline(deps: PipelineDeps, log: Logger): Promise<Dige
     per_source_stats: stats,
   };
   try {
+    const tRec = Date.now();
     await deps.recordRun(run);
+    log.info('digest_run recorded', { durationMs: Date.now() - tRec });
   } catch (e) {
     log.error('recordRun failed', { error: errStr(e) });
   }
+
+  log.info('pipeline end', {
+    status,
+    stored: articlesStored,
+    emailSent,
+    messageId,
+    totalDurationMs: Date.now() - tPipelineStart,
+  });
+
   try {
+    const tShip = Date.now();
+    const lineCount = log.lines().length;
     await deps.shipLogs(log.lines());
+    console.error(JSON.stringify({
+      level: 'info', msg: 'logs shipped', lineCount, durationMs: Date.now() - tShip,
+    }));
   } catch (e) {
     console.error(JSON.stringify({ level: 'error', msg: 'shipLogs failed', error: errStr(e) }));
   }
@@ -105,14 +163,35 @@ export async function runPipeline(deps: PipelineDeps, log: Logger): Promise<Dige
 }
 
 async function main(): Promise<void> {
+  const tMainStart = Date.now();
   const log = createLogger();
+  log.info('run started', {
+    startedAt: new Date().toISOString(),
+    nodeVersion: process.version,
+  });
+
   const cfg = loadConfig(process.env);
+  log.info('config loaded', {
+    hasGeminiKey: Boolean(cfg.geminiApiKey),
+    supabaseUrlHost: new URL(cfg.supabaseUrl).host,
+    recipientEmail: cfg.recipientEmail,
+    webAppUrl: cfg.webAppUrl,
+  });
+
   const db = makeDb(cfg.supabaseUrl, cfg.supabaseServiceKey);
   const genai = new GoogleGenAI({ apiKey: cfg.geminiApiKey });
+  const geminiModel = 'gemini-1.5-flash';
   const model: ModelFn = async (prompt) => {
+    const tModel = Date.now();
     const result = await genai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: geminiModel,
       contents: prompt,
+    });
+    log.info('gemini api call', {
+      model: geminiModel,
+      promptLen: prompt.length,
+      responseLen: (result.text ?? '').length,
+      durationMs: Date.now() - tModel,
     });
     return result.text ?? '';
   };
@@ -134,7 +213,15 @@ async function main(): Promise<void> {
     },
     log,
   );
-  log.info('run complete', { status: run.status, stored: run.articles_stored });
+  console.error(JSON.stringify({
+    level: 'info',
+    msg: 'run complete',
+    status: run.status,
+    stored: run.articles_stored,
+    emailSent: run.email_sent,
+    error: run.error,
+    totalDurationMs: Date.now() - tMainStart,
+  }));
   if (run.status === 'failed') process.exit(1);
 }
 

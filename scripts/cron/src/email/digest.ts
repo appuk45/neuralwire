@@ -31,7 +31,9 @@ export function renderDigestHtml(articles: SummarizedArticle[], meta: DigestMeta
 
 export async function sendDigest(
   html: string, subject: string, to: string, apiKey: string,
-): Promise<void> {
+): Promise<string | null> {
   const resend = new Resend(apiKey);
-  await resend.emails.send({ from: 'NeuralWire <digest@neuralwire.app>', to, subject, html });
+  const result = await resend.emails.send({ from: 'NeuralWire <digest@neuralwire.app>', to, subject, html });
+  if (result.error) throw new Error(`Resend error: ${JSON.stringify(result.error)}`);
+  return result.data?.id ?? null;
 }

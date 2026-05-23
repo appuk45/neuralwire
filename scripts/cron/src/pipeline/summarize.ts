@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Article, SummarizedArticle } from '../types.js';
+import type { Logger } from '../log.js';
 
 // Callable that takes a prompt and returns the model's text output.
 export type ModelFn = (prompt: string) => Promise<string>;
@@ -58,23 +59,61 @@ ITEMS:
 ${items}`;
 }
 
-export async function summarizeBatch(articles: Article[], model: ModelFn): Promise<SummarizedArticle[]> {
+export async function summarizeBatch(
+  articles: Article[],
+  model: ModelFn,
+  log?: Logger,
+): Promise<SummarizedArticle[]> {
   const out: SummarizedArticle[] = [];
   for (let i = 0; i < articles.length; i += BATCH_SIZE) {
+    const batchIndex = i / BATCH_SIZE;
     const batch = articles.slice(i, i + BATCH_SIZE);
-    let parsed: unknown;
+    log?.info('summarize batch start', { batchIndex, size: batch.length });
+
+    let parsed: unknown = null;
+    let rawText = '';
+    const t0 = Date.now();
     try {
-      const text = await model(buildPrompt(batch));
-      const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
+      rawText = await model(buildPrompt(batch));
+      log?.info('gemini called', {
+        batchIndex,
+        responseLen: rawText.length,
+        durationMs: Date.now() - t0,
+      });
+      const cleaned = rawText.trim().replace(/^```json\s*/i, '').replace(/```$/, '').trim();
       parsed = JSON.parse(cleaned);
-    } catch {
+    } catch (e) {
+      log?.error('summarize parse failed', {
+        batchIndex,
+        error: e instanceof Error ? e.message : String(e),
+        rawPreview: rawText.slice(0, 1500),
+        durationMs: Date.now() - t0,
+      });
       parsed = null;
     }
+
     const arr = Array.isArray(parsed) ? parsed : [];
+    let okCount = 0;
+    let fallbackCount = 0;
     batch.forEach((a, idx) => {
       const candidate = itemSchema.safeParse(arr[idx]);
-      out.push(candidate.success ? { ...a, ...candidate.data } : fallbackSummary(a));
+      if (candidate.success) {
+        out.push({ ...a, ...candidate.data });
+        okCount++;
+      } else {
+        if (arr[idx] !== undefined) {
+          log?.warn('summarize schema failed', {
+            batchIndex,
+            itemIndex: idx,
+            issues: candidate.error.issues.map((x) => `${x.path.join('.')}:${x.code}`).join(','),
+            itemPreview: JSON.stringify(arr[idx]).slice(0, 300),
+          });
+        }
+        out.push(fallbackSummary(a));
+        fallbackCount++;
+      }
     });
+    log?.info('summarize batch done', { batchIndex, ok: okCount, fallback: fallbackCount });
   }
   return out;
 }

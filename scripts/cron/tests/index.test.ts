@@ -20,7 +20,7 @@ describe('runPipeline', () => {
       ]),
       getKnownHashes: async () => new Set<string>(),
       insertArticles: vi.fn(async (rows: unknown[]) => rows.length),
-      sendDigest: vi.fn(async () => {}),
+      sendDigest: vi.fn(async (): Promise<string | null> => 'msg_test_123'),
       recordRun: vi.fn(async () => {}),
       shipLogs: vi.fn(async () => {}),
       meta: { date: '2026-05-22', webAppUrl: 'https://x', accessToken: 't', recipientEmail: 'me@x', digestCount: 10 },
