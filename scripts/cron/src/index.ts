@@ -180,7 +180,7 @@ async function main(): Promise<void> {
 
   const db = makeDb(cfg.supabaseUrl, cfg.supabaseServiceKey);
   const genai = new GoogleGenAI({ apiKey: cfg.geminiApiKey });
-  const geminiModel = 'gemini-1.5-flash';
+  const geminiModel = 'gemini-3.5-flash';
   const model: ModelFn = async (prompt) => {
     const tModel = Date.now();
     const result = await genai.models.generateContent({
